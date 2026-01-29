@@ -1,14 +1,18 @@
 # @benvargas/pi-antigravity-image-gen
 
-Image generation tool for [pi](https://github.com/badlogic/pi-mono) using Google Antigravity's image models (Gemini, Imagen).
+Image generation tool for [pi](https://github.com/badlogic/pi-mono) using Google Antigravity's Gemini 3 Pro Image model.
 
 Generated images are returned as tool result attachments for inline terminal rendering.
 
+Based on [opencode-antigravity-img](https://github.com/ominiverdi/opencode-antigravity-img) by ominiverdi and [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth) by NoeFabris.
+
 ## Features
 
-- **Multiple models** -- gemini-3-pro-image (default), imagen-3
+- **Gemini 3 Pro Image** -- the only image model available via the Antigravity API
 - **Aspect ratios** -- 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9
 - **Inline rendering** -- images display directly in the terminal
+- **Endpoint fallback** -- tries daily, autopush, and prod endpoints with automatic failover on rate limits or timeouts
+- **Quota checking** -- check remaining image generation quota and reset time
 - **Flexible save options** -- save to project, global, or custom directory
 - **Config file support** -- persistent settings via JSON config
 
@@ -41,20 +45,27 @@ Once authenticated, ask pi to generate images naturally:
 ```
 "Generate an image of a sunset over mountains"
 "Create a 16:9 wallpaper of a cyberpunk city"
-"Generate an imagen-3 picture of a cat in a spacesuit"
+"Check my image generation quota"
 ```
 
-The extension registers a `generate_image` tool that the model calls automatically when image generation is requested.
+The extension registers two tools that the model calls automatically:
 
-### Tool Parameters
+### generate_image
+
+Generate an image from a text prompt.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `prompt` | Image description (required) | -- |
-| `model` | Model ID (`gemini-3-pro-image`, `imagen-3`) | `gemini-3-pro-image` |
 | `aspectRatio` | Image dimensions | `1:1` |
 | `save` | Save mode (`none`, `project`, `global`, `custom`) | `none` |
 | `saveDir` | Directory for `save=custom` | `PI_IMAGE_SAVE_DIR` |
+
+### image_quota
+
+Check remaining image generation quota. No parameters required.
+
+Shows a progress bar with percentage remaining and time until quota resets. Image generation uses a separate quota from text models, resetting approximately every 5 hours.
 
 ## Saving Images
 
@@ -92,6 +103,22 @@ Create a JSON config file (project overrides global):
 | `project` | `<repo>/.pi/generated-images/` |
 | `global` | `~/.pi/agent/generated-images/` |
 | `custom` | `saveDir` param or `PI_IMAGE_SAVE_DIR` |
+
+## API Endpoints
+
+The extension uses Google's CloudCode API with automatic fallback:
+
+1. `https://daily-cloudcode-pa.sandbox.googleapis.com` (primary)
+2. `https://autopush-cloudcode-pa.sandbox.googleapis.com` (fallback)
+3. `https://cloudcode-pa.googleapis.com` (production)
+
+If an endpoint returns a 429 (rate limited) or times out, the next endpoint is tried automatically.
+
+## Supported Models
+
+Only **gemini-3-pro-image** is available via the Antigravity API. Other image models (Imagen, gemini-2.5-flash-image) are not supported by this endpoint.
+
+Image output is always JPEG format. Generation typically takes 10-30 seconds.
 
 ## Requirements
 

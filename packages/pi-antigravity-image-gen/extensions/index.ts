@@ -1,9 +1,12 @@
 /**
  * Antigravity Image Generation
  *
- * Generates images via Google Antigravity's image models (gemini-3-pro-image, imagen-3).
+ * Generates images via Google Antigravity's Gemini 3 Pro Image model.
  * Returns images as tool result attachments for inline terminal rendering.
  * Requires OAuth login via /login for google-antigravity.
+ *
+ * Note: Only gemini-3-pro-image is available via the Antigravity API.
+ * Imagen models and gemini-2.5-flash-image are NOT supported by this endpoint.
  *
  * Usage:
  *   "Generate an image of a sunset over mountains"
@@ -23,6 +26,9 @@
  *   ~/.pi/agent/extensions/antigravity-image-gen.json
  *   <repo>/.pi/extensions/antigravity-image-gen.json
  *   Example: { "save": "global" }
+ *
+ * Based on opencode-antigravity-img by ominiverdi (MIT)
+ * and opencode-antigravity-auth by NoeFabris (MIT).
  */
 
 import { randomUUID } from "node:crypto";
@@ -34,22 +40,33 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
 const PROVIDER = "google-antigravity";
+const IMAGE_MODEL = "gemini-3-pro-image";
 
 const ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] as const;
-
 type AspectRatio = (typeof ASPECT_RATIOS)[number];
 
-const DEFAULT_MODEL = "gemini-3-pro-image";
 const DEFAULT_ASPECT_RATIO: AspectRatio = "1:1";
 const DEFAULT_SAVE_MODE = "none";
 
 const SAVE_MODES = ["none", "project", "global", "custom"] as const;
 type SaveMode = (typeof SAVE_MODES)[number];
 
-const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+/** Endpoint fallback order — daily first (most permissive), prod last. */
+const ANTIGRAVITY_ENDPOINTS = [
+	"https://daily-cloudcode-pa.sandbox.googleapis.com",
+	"https://autopush-cloudcode-pa.sandbox.googleapis.com",
+	"https://cloudcode-pa.googleapis.com",
+] as const;
 
-const ANTIGRAVITY_HEADERS = {
+/** Prod endpoint for quota checks. */
+const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
+
+const ANTIGRAVITY_HEADERS: Record<string, string> = {
 	"User-Agent": "antigravity/1.11.5 darwin/arm64",
 	"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
 	"Client-Metadata": JSON.stringify({
@@ -62,13 +79,18 @@ const ANTIGRAVITY_HEADERS = {
 const IMAGE_SYSTEM_INSTRUCTION =
 	"You are an AI image generator. Generate images based on user descriptions. Focus on creating high-quality, visually appealing images that match the user's request.";
 
+/** Image generation typically takes 10-30 seconds. */
+const IMAGE_GENERATION_TIMEOUT_MS = 60_000;
+
+/** Quota fetch timeout. */
+const QUOTA_TIMEOUT_MS = 10_000;
+
+// ---------------------------------------------------------------------------
+// Tool parameters
+// ---------------------------------------------------------------------------
+
 const TOOL_PARAMS = Type.Object({
 	prompt: Type.String({ description: "Image description." }),
-	model: Type.Optional(
-		Type.String({
-			description: "Image model id (e.g., gemini-3-pro-image, imagen-3). Default: gemini-3-pro-image.",
-		}),
-	),
 	aspectRatio: Type.Optional(StringEnum(ASPECT_RATIOS)),
 	save: Type.Optional(StringEnum(SAVE_MODES)),
 	saveDir: Type.Optional(
@@ -80,6 +102,10 @@ const TOOL_PARAMS = Type.Object({
 
 type ToolParams = Static<typeof TOOL_PARAMS>;
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 interface CloudCodeAssistRequest {
 	project: string;
 	model: string;
@@ -88,8 +114,7 @@ interface CloudCodeAssistRequest {
 		sessionId?: string;
 		systemInstruction?: { role?: string; parts: { text: string }[] };
 		generationConfig?: {
-			maxOutputTokens?: number;
-			temperature?: number;
+			responseModalities?: string[];
 			imageConfig?: { aspectRatio?: string };
 			candidateCount?: number;
 		};
@@ -155,6 +180,26 @@ interface SaveConfig {
 	outputDir?: string;
 }
 
+interface QuotaInfo {
+	remainingPercent: number;
+	resetIn: string;
+	resetTime?: string;
+}
+
+interface FetchAvailableModelsResponse {
+	models?: Record<
+		string,
+		{
+			quotaInfo?: { remainingFraction?: number; resetTime?: string };
+			displayName?: string;
+		}
+	>;
+}
+
+// ---------------------------------------------------------------------------
+// Credentials
+// ---------------------------------------------------------------------------
+
 function parseOAuthCredentials(raw: string): ParsedCredentials {
 	let parsed: { token?: string; projectId?: string };
 	try {
@@ -167,6 +212,20 @@ function parseOAuthCredentials(raw: string): ParsedCredentials {
 	}
 	return { accessToken: parsed.token, projectId: parsed.projectId };
 }
+
+async function getCredentials(ctx: {
+	modelRegistry: { getApiKeyForProvider: (provider: string) => Promise<string | undefined> };
+}): Promise<ParsedCredentials> {
+	const apiKey = await ctx.modelRegistry.getApiKeyForProvider(PROVIDER);
+	if (!apiKey) {
+		throw new Error("Missing Google Antigravity OAuth credentials. Run /login for google-antigravity.");
+	}
+	return parseOAuthCredentials(apiKey);
+}
+
+// ---------------------------------------------------------------------------
+// Config / save helpers
+// ---------------------------------------------------------------------------
 
 function readConfigFile(path: string): ExtensionConfig {
 	if (!existsSync(path)) {
@@ -234,10 +293,14 @@ async function saveImage(base64Data: string, mimeType: string, outputDir: string
 	return filePath;
 }
 
-function buildRequest(prompt: string, model: string, projectId: string, aspectRatio: string): CloudCodeAssistRequest {
+// ---------------------------------------------------------------------------
+// Request building
+// ---------------------------------------------------------------------------
+
+function buildRequest(prompt: string, projectId: string, aspectRatio: string): CloudCodeAssistRequest {
 	return {
 		project: projectId,
-		model,
+		model: IMAGE_MODEL,
 		request: {
 			contents: [
 				{
@@ -249,6 +312,7 @@ function buildRequest(prompt: string, model: string, projectId: string, aspectRa
 				parts: [{ text: IMAGE_SYSTEM_INSTRUCTION }],
 			},
 			generationConfig: {
+				responseModalities: ["TEXT", "IMAGE"],
 				imageConfig: { aspectRatio },
 				candidateCount: 1,
 			},
@@ -265,6 +329,10 @@ function buildRequest(prompt: string, model: string, projectId: string, aspectRa
 		userAgent: "antigravity",
 	};
 }
+
+// ---------------------------------------------------------------------------
+// SSE parsing
+// ---------------------------------------------------------------------------
 
 async function parseSseForImage(
 	response: Response,
@@ -295,7 +363,7 @@ async function parseSseForImage(
 			for (const line of lines) {
 				if (!line.startsWith("data:")) continue;
 				const jsonStr = line.slice(5).trim();
-				if (!jsonStr) continue;
+				if (!jsonStr || jsonStr === "[DONE]") continue;
 
 				let chunk: CloudCodeAssistResponseChunk;
 				try {
@@ -335,52 +403,159 @@ async function parseSseForImage(
 	throw new Error("No image data returned by the model");
 }
 
-async function getCredentials(ctx: {
-	modelRegistry: { getApiKeyForProvider: (provider: string) => Promise<string | undefined> };
-}): Promise<ParsedCredentials> {
-	const apiKey = await ctx.modelRegistry.getApiKeyForProvider(PROVIDER);
-	if (!apiKey) {
-		throw new Error("Missing Google Antigravity OAuth credentials. Run /login for google-antigravity.");
+// ---------------------------------------------------------------------------
+// Image generation with endpoint fallback
+// ---------------------------------------------------------------------------
+
+async function generateImage(
+	accessToken: string,
+	projectId: string,
+	prompt: string,
+	aspectRatio: string,
+	signal?: AbortSignal,
+): Promise<{ image: { data: string; mimeType: string }; text: string[] }> {
+	const requestBody = buildRequest(prompt, projectId, aspectRatio);
+	const errors: string[] = [];
+
+	for (const endpoint of ANTIGRAVITY_ENDPOINTS) {
+		try {
+			const controller = new AbortController();
+			const timeout = setTimeout(() => controller.abort(), IMAGE_GENERATION_TIMEOUT_MS);
+
+			// Chain with caller's signal
+			if (signal) {
+				signal.addEventListener("abort", () => controller.abort(), { once: true });
+			}
+
+			let response: Response;
+			try {
+				response = await fetch(`${endpoint}/v1internal:streamGenerateContent?alt=sse`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+						"Content-Type": "application/json",
+						Accept: "text/event-stream",
+						...ANTIGRAVITY_HEADERS,
+					},
+					body: JSON.stringify(requestBody),
+					signal: controller.signal,
+				});
+			} finally {
+				clearTimeout(timeout);
+			}
+
+			if (response.status === 429) {
+				// Rate limited — try next endpoint
+				errors.push(`${endpoint}: rate limited (429)`);
+				continue;
+			}
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				errors.push(`${endpoint}: ${response.status} ${errorText.slice(0, 200)}`);
+				continue;
+			}
+
+			return await parseSseForImage(response, signal);
+		} catch (err) {
+			if (err instanceof Error && err.name === "AbortError") {
+				if (signal?.aborted) {
+					throw new Error("Request was aborted");
+				}
+				// Timeout — try next endpoint
+				errors.push(`${endpoint}: timeout`);
+				continue;
+			}
+			errors.push(`${endpoint}: ${err instanceof Error ? err.message : String(err)}`);
+			continue;
+		}
 	}
-	return parseOAuthCredentials(apiKey);
+
+	throw new Error(`All endpoints failed:\n${errors.join("\n")}`);
 }
 
-export default function antigravityImageGen(pi: ExtensionAPI) {
-	pi.registerTool({
-		name: "generate_image",
-		label: "Generate image",
-		description:
-			"Generate an image via Google Antigravity image models. Returns the image as a tool result attachment. Optional saving via save=project|global|custom|none, or PI_IMAGE_SAVE_MODE/PI_IMAGE_SAVE_DIR.",
-		parameters: TOOL_PARAMS,
-		async execute(_toolCallId, params: ToolParams, onUpdate, ctx, signal) {
-			const { accessToken, projectId } = await getCredentials(ctx);
-			const model = params.model || DEFAULT_MODEL;
-			const aspectRatio = params.aspectRatio || DEFAULT_ASPECT_RATIO;
+// ---------------------------------------------------------------------------
+// Quota check
+// ---------------------------------------------------------------------------
 
-			const requestBody = buildRequest(params.prompt, model, projectId, aspectRatio);
-			onUpdate?.({
-				content: [{ type: "text", text: `Requesting image from ${PROVIDER}/${model}...` }],
-				details: { provider: PROVIDER, model, aspectRatio },
-			});
+async function getImageQuota(accessToken: string, projectId: string): Promise<QuotaInfo | null> {
+	try {
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), QUOTA_TIMEOUT_MS);
 
-			const response = await fetch(`${ANTIGRAVITY_ENDPOINT}/v1internal:streamGenerateContent?alt=sse`, {
+		let response: Response;
+		try {
+			response = await fetch(`${ANTIGRAVITY_ENDPOINT_PROD}/v1internal:fetchAvailableModels`, {
 				method: "POST",
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 					"Content-Type": "application/json",
-					Accept: "text/event-stream",
-					...ANTIGRAVITY_HEADERS,
+					"User-Agent": ANTIGRAVITY_HEADERS["User-Agent"],
 				},
-				body: JSON.stringify(requestBody),
-				signal,
+				body: JSON.stringify({ project: projectId }),
+				signal: controller.signal,
+			});
+		} finally {
+			clearTimeout(timeout);
+		}
+
+		if (!response.ok) return null;
+
+		const data = (await response.json()) as FetchAvailableModelsResponse;
+		if (!data.models) return null;
+
+		// Find the image model entry
+		const imageEntry = data.models[IMAGE_MODEL];
+		if (!imageEntry?.quotaInfo) return null;
+
+		const quota = imageEntry.quotaInfo;
+		const remainingPercent = (quota.remainingFraction ?? 0) * 100;
+		const resetTime = quota.resetTime || "";
+
+		let resetIn = "N/A";
+		if (resetTime) {
+			const resetDate = new Date(resetTime);
+			const diffMs = resetDate.getTime() - Date.now();
+			if (diffMs > 0) {
+				const hours = Math.floor(diffMs / 3600000);
+				const mins = Math.floor((diffMs % 3600000) / 60000);
+				resetIn = `${hours}h ${mins}m`;
+			} else {
+				resetIn = "now";
+			}
+		}
+
+		return { remainingPercent, resetIn, resetTime };
+	} catch {
+		return null;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Extension entry point
+// ---------------------------------------------------------------------------
+
+export default function antigravityImageGen(pi: ExtensionAPI) {
+	// Tool: generate_image
+	pi.registerTool({
+		name: "generate_image",
+		label: "Generate image",
+		description:
+			"Generate an image via Google Antigravity's Gemini 3 Pro Image model. " +
+			"Returns the image as a tool result attachment for inline terminal rendering. " +
+			"Optional saving via save=project|global|custom|none, or PI_IMAGE_SAVE_MODE/PI_IMAGE_SAVE_DIR.",
+		parameters: TOOL_PARAMS,
+		async execute(_toolCallId, params: ToolParams, onUpdate, ctx, signal) {
+			const { accessToken, projectId } = await getCredentials(ctx);
+			const aspectRatio = params.aspectRatio || DEFAULT_ASPECT_RATIO;
+
+			onUpdate?.({
+				content: [{ type: "text", text: `Generating image (${IMAGE_MODEL}, ${aspectRatio})...` }],
+				details: { provider: PROVIDER, model: IMAGE_MODEL, aspectRatio },
 			});
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`Image request failed (${response.status}): ${errorText}`);
-			}
+			const parsed = await generateImage(accessToken, projectId, params.prompt, aspectRatio, signal);
 
-			const parsed = await parseSseForImage(response, signal);
 			const saveConfig = resolveSaveConfig(params, ctx.cwd);
 			let savedPath: string | undefined;
 			let saveError: string | undefined;
@@ -391,11 +566,12 @@ export default function antigravityImageGen(pi: ExtensionAPI) {
 					saveError = error instanceof Error ? error.message : String(error);
 				}
 			}
-			const summaryParts = [`Generated image via ${PROVIDER}/${model}.`, `Aspect ratio: ${aspectRatio}.`];
+
+			const summaryParts = [`Generated image via ${PROVIDER}/${IMAGE_MODEL}.`, `Aspect ratio: ${aspectRatio}.`];
 			if (savedPath) {
-				summaryParts.push(`Saved image to: ${savedPath}`);
+				summaryParts.push(`Saved to: ${savedPath}`);
 			} else if (saveError) {
-				summaryParts.push(`Failed to save image: ${saveError}`);
+				summaryParts.push(`Failed to save: ${saveError}`);
 			}
 			if (parsed.text.length > 0) {
 				summaryParts.push(`Model notes: ${parsed.text.join(" ")}`);
@@ -406,7 +582,48 @@ export default function antigravityImageGen(pi: ExtensionAPI) {
 					{ type: "text", text: summaryParts.join(" ") },
 					{ type: "image", data: parsed.image.data, mimeType: parsed.image.mimeType },
 				],
-				details: { provider: PROVIDER, model, aspectRatio, savedPath, saveMode: saveConfig.mode },
+				details: { provider: PROVIDER, model: IMAGE_MODEL, aspectRatio, savedPath, saveMode: saveConfig.mode },
+			};
+		},
+	});
+
+	// Tool: image_quota
+	pi.registerTool({
+		name: "image_quota",
+		label: "Image quota",
+		description:
+			"Check remaining image generation quota for the Gemini 3 Pro Image model. " +
+			"Shows percentage remaining and time until reset. " +
+			"Image generation uses a separate quota from text models. Quota resets every ~5 hours.",
+		parameters: Type.Object({}),
+		async execute(_toolCallId, _params: Record<string, never>, _onUpdate, ctx) {
+			const { accessToken, projectId } = await getCredentials(ctx);
+			const quota = await getImageQuota(accessToken, projectId);
+
+			if (!quota) {
+				return {
+					content: [{ type: "text", text: "Could not fetch quota information. The API may be temporarily unavailable." }],
+				};
+			}
+
+			const barWidth = 20;
+			const filled = Math.round((quota.remainingPercent / 100) * barWidth);
+			const empty = barWidth - filled;
+			const bar = "#".repeat(filled) + ".".repeat(empty);
+
+			const lines = [
+				`${IMAGE_MODEL}`,
+				`[${bar}] ${quota.remainingPercent.toFixed(0)}% remaining`,
+				`Resets in: ${quota.resetIn}`,
+			];
+
+			if (quota.resetTime) {
+				const resetDate = new Date(quota.resetTime);
+				lines[2] += ` (at ${resetDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`;
+			}
+
+			return {
+				content: [{ type: "text", text: lines.join("\n") }],
 			};
 		},
 	});
