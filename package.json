@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "Extensions for pi, the AI coding agent",
+  "workspaces": [
+    "packages/*"
+  ],
   "keywords": [
     "pi-package"
   ],
