@@ -378,10 +378,12 @@ export default function (pi: ExtensionAPI) {
 
 				// Build table output (rendered in log area)
 				ctx.ui.notify("Displaying model catalog in logs", "info");
-				console.log("\n" + "=".repeat(100));
-				console.log("SYNTHETIC MODEL CATALOG");
-				console.log("=".repeat(100));
-				console.log(`Total models available: ${models.length}\n`);
+
+				const W = 90;
+				console.log("\n" + "=".repeat(W));
+				console.log("  SYNTHETIC MODEL CATALOG");
+				console.log("  " + models.length + " models available");
+				console.log("=".repeat(W));
 
 				// Group by provider
 				const byProvider = new Map<string, SyntheticModel[]>();
@@ -395,38 +397,55 @@ export default function (pi: ExtensionAPI) {
 
 				// Display by provider
 				for (const [provider, providerModels] of byProvider) {
-					console.log(`\n${provider.toUpperCase()} (${providerModels.length} models)`);
-					console.log("-".repeat(100));
+					console.log("");
+					console.log(`  ${provider.toUpperCase()} (${providerModels.length})`);
+					console.log("-".repeat(W));
 
 					// Table header
-					console.log(
-						`${"Model ID".padEnd(40)} ${"Context".padStart(8)} ${"Input".padStart(8)} ${"Output".padStart(8)} ${"Vision".padStart(6)} ${"Reason".padStart(6)}`,
-					);
-					console.log("-".repeat(100));
+					const hdr =
+						"  " +
+						"Model".padEnd(44) +
+						"Ctx".padStart(5) +
+						"Input".padStart(8) +
+						"Output".padStart(8) +
+						"Cache".padStart(8) +
+						"  " +
+						"Caps";
+					console.log(hdr);
+					console.log("-".repeat(W));
 
 					for (const m of providerModels) {
-						const id = m.id.length > 38 ? m.id.substring(0, 35) + "..." : m.id;
+						const id = m.id.length > 42 ? m.id.substring(0, 39) + "..." : m.id;
 						const context = (m.context_length / 1024).toFixed(0) + "K";
-						const inputCost = parsePrice(m.pricing?.prompt).toFixed(2);
-						const outputCost = parsePrice(m.pricing?.completion).toFixed(2);
-						const hasVision = m.input_modalities?.includes("image") ? "✓" : "-";
-						const hasReasoning = m.supported_features?.includes("reasoning") ? "✓" : "-";
+						const inputCost = "$" + parsePrice(m.pricing?.prompt).toFixed(2);
+						const outputCost = "$" + parsePrice(m.pricing?.completion).toFixed(2);
+						const cacheCost = "$" + parsePrice(m.pricing?.input_cache_reads).toFixed(2);
+
+						const caps: string[] = [];
+						if (m.input_modalities?.includes("image")) caps.push("vision");
+						if (m.supported_features?.includes("reasoning")) caps.push("reason");
+						if (m.supported_features?.includes("tools")) caps.push("tools");
+						const capsStr = caps.length > 0 ? caps.join(", ") : "";
 
 						console.log(
-							`${id.padEnd(40)} ${context.padStart(8)} $${inputCost.padStart(6)}/M $${outputCost.padStart(6)}/M ${hasVision.padStart(6)} ${hasReasoning.padStart(6)}`,
+							"  " +
+								id.padEnd(44) +
+								context.padStart(5) +
+								inputCost.padStart(8) +
+								outputCost.padStart(8) +
+								cacheCost.padStart(8) +
+								"  " +
+								capsStr,
 						);
 					}
 				}
 
-				console.log("\n" + "=".repeat(100));
-				console.log("LEGEND:");
-				console.log("  Context = Context window size in tokens");
-				console.log("  Input/Output = Cost per million tokens ($)");
-				console.log("  Vision = Supports image input (✓ = yes, - = no)");
-				console.log("  Reason = Supports reasoning/thinking (✓ = yes, - = no)");
-				console.log("\n  Use synthetic:<model-id> to select a model");
+				console.log("");
+				console.log("=".repeat(W));
+				console.log("  Prices are $/million tokens. Cache = input cache read cost.");
+				console.log("  Use synthetic:<model-id> to select a model");
 				console.log("  Example: pi --model synthetic:hf:moonshotai/Kimi-K2.5");
-				console.log("=".repeat(100) + "\n");
+				console.log("=".repeat(W) + "\n");
 			} catch (error) {
 				const errorMessage = error instanceof Error ? error.message : String(error);
 				ctx.ui.notify(`Failed to fetch models: ${errorMessage}`, "error");
