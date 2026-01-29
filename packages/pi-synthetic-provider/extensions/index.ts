@@ -121,8 +121,6 @@ function parsePrice(price?: string): number {
  */
 async function fetchSyntheticModels(apiKey?: string): Promise<ProviderModelConfig[]> {
 	try {
-		console.log("[Synthetic Provider] Fetching models from API...");
-
 		const headers: Record<string, string> = {
 			Accept: "application/json",
 		};
@@ -176,11 +174,6 @@ async function fetchSyntheticModels(apiKey?: string): Promise<ProviderModelConfi
 			});
 		}
 
-		console.log(`[Synthetic Provider] Loaded ${models.length} models`);
-		for (const m of models) {
-			console.log(`  - ${m.id} (${m.name})`);
-		}
-
 		return models;
 	} catch (error) {
 		console.error("[Synthetic Provider] Failed to fetch models:", error);
@@ -199,7 +192,6 @@ async function fetchSyntheticModels(apiKey?: string): Promise<ProviderModelConfi
  * Kimi-K2.5: "$1.20" per million (already in per-M format)
  */
 function getFallbackModels(): ProviderModelConfig[] {
-	console.log("[Synthetic Provider] Using fallback model list (sourced from API)");
 
 	return [
 		{
@@ -331,13 +323,8 @@ export default function (pi: ExtensionAPI) {
 				api: "openai-completions",
 				models,
 			});
-			console.log(`[Synthetic Provider] Updated with ${models.length} live models`);
 		} else {
 			console.log("[Synthetic Provider] API unavailable, using fallback models");
-		}
-
-		if (!hasKey) {
-			console.log("[Synthetic Provider] Set SYNTHETIC_API_KEY or add key to auth.json (see README)");
 		}
 	});
 
