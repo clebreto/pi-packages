@@ -8,9 +8,9 @@ Extensions for [pi](https://github.com/badlogic/pi-mono), the AI coding agent.
 |---------|-------------|---------|
 | [@benvargas/pi-synthetic-provider](./packages/pi-synthetic-provider/) | [Synthetic](https://synthetic.new) model provider | `pi install npm:@benvargas/pi-synthetic-provider` |
 
-## Install (git)
+## Install All
 
-Install all extensions in this repo via git:
+Install every extension in this repo with a single command:
 
 ```bash
 pi install git:github.com/ben-vargas/pi-packages
