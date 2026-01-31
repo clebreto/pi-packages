@@ -810,7 +810,9 @@ const extractParams = Type.Object(
 		urls: Type.Array(Type.String(), { description: "URLs to extract." }),
 		prompt: Type.Optional(Type.String()),
 		systemPrompt: Type.Optional(Type.String()),
-		schema: Type.Optional(Type.Unknown()),
+		// Type.Unknown() serializes to {}, which some backends reject as invalid JSON Schema.
+		// Use an explicit object schema to stay compatible with stricter validators.
+		schema: Type.Optional(Type.Object({}, { additionalProperties: true })),
 		allowExternalLinks: Type.Optional(Type.Boolean()),
 		enableWebSearch: Type.Optional(Type.Boolean()),
 		includeSubdomains: Type.Optional(Type.Boolean()),
