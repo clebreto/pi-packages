@@ -1,6 +1,6 @@
 {
   "name": "@benvargas/pi-ancestor-discovery",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Recursive ancestor discovery for pi resources (skills, prompts, themes)",
   "keywords": [
     "pi",
