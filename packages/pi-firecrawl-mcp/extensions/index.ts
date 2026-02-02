@@ -974,7 +974,7 @@ export default function piFirecrawlMcp(pi: ExtensionAPI) {
 			label,
 			description,
 			parameters,
-			async execute(_toolCallId, params: Static<TParams>, onUpdate, _ctx, signal) {
+			async execute(_toolCallId, params: Static<TParams>, signal, onUpdate, _ctx) {
 				if (signal?.aborted) {
 					return { content: [{ type: "text", text: "Cancelled." }], details: { cancelled: true } };
 				}

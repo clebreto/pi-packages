@@ -2,7 +2,7 @@
 
 Recursive ancestor discovery for pi resources (skills, prompts, themes).
 
-This extension uses the `resources_discover` hook (pi v0.50.8+) to walk upward from your current working directory and discover resource folders at each ancestor level.
+This extension uses the `resources_discover` hook (pi v0.51.0+) to walk upward from your current working directory and discover resource folders at each ancestor level.
 
 ## Install
 

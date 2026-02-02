@@ -92,7 +92,7 @@ When multiple sources are configured, pi checks in this order:
 
 ## Requirements
 
-- pi v0.50.0 or later
+- pi v0.51.0 or later
 - A Synthetic API key from [synthetic.new](https://synthetic.new)
 
 ## Uninstall

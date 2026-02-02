@@ -258,7 +258,7 @@ Tool output is automatically truncated to prevent context window overflow:
 
 ## Requirements
 
-- pi v0.50.0 or later
+- pi v0.51.0 or later
 - Optional: Firecrawl API key from [firecrawl.dev](https://firecrawl.dev) for higher rate limits
 
 ## Uninstall

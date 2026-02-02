@@ -850,7 +850,7 @@ export default function exaMcp(pi: ExtensionAPI) {
 			description:
 				"Real-time web search via Exa; best for up-to-date info. Client-side truncation; override with piMaxBytes/piMaxLines (clamped by config).",
 			parameters: webSearchParams,
-			async execute(_toolCallId, params, onUpdate, _ctx, signal) {
+			async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 				if (signal?.aborted) {
 					return { content: [{ type: "text", text: "Cancelled." }], details: { cancelled: true } };
 				}
@@ -888,7 +888,7 @@ export default function exaMcp(pi: ExtensionAPI) {
 			description:
 				"Search code/docs via Exa; best for API usage/examples. Client-side truncation; override with piMaxBytes/piMaxLines (clamped by config).",
 			parameters: codeContextParams,
-			async execute(_toolCallId, params, onUpdate, _ctx, signal) {
+			async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 				if (signal?.aborted) {
 					return { content: [{ type: "text", text: "Cancelled." }], details: { cancelled: true } };
 				}

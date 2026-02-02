@@ -563,7 +563,7 @@ export default function antigravityImageGen(pi: ExtensionAPI) {
 			"Returns the image as a tool result attachment for inline terminal rendering. " +
 			"Optional saving via save=project|global|custom|none, or PI_IMAGE_SAVE_MODE/PI_IMAGE_SAVE_DIR.",
 		parameters: TOOL_PARAMS,
-		async execute(_toolCallId, params: ToolParams, onUpdate, ctx, signal) {
+		async execute(_toolCallId, params: ToolParams, signal, onUpdate, ctx) {
 			const { accessToken, projectId } = await getCredentials(ctx);
 			const aspectRatio = params.aspectRatio || DEFAULT_ASPECT_RATIO;
 
@@ -614,7 +614,7 @@ export default function antigravityImageGen(pi: ExtensionAPI) {
 			"Shows percentage remaining and time until reset. " +
 			"Image generation uses a separate quota from text models. Quota resets every ~5 hours.",
 		parameters: Type.Object({}),
-		async execute(_toolCallId, _params: Record<string, never>, _onUpdate, ctx) {
+		async execute(_toolCallId, _params: Record<string, never>, _signal, _onUpdate, ctx) {
 			const { accessToken, projectId } = await getCredentials(ctx);
 			const quota = await getImageQuota(accessToken, projectId);
 

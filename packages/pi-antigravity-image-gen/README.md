@@ -124,7 +124,7 @@ Image output is always JPEG format. Generation typically takes 10-30 seconds.
 
 ## Requirements
 
-- pi v0.50.0 or later
+- pi v0.51.0 or later
 - Google Antigravity OAuth credentials (via `/login`)
 
 ## Uninstall
