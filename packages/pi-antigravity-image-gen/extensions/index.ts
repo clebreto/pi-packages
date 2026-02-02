@@ -67,14 +67,14 @@ const ANTIGRAVITY_ENDPOINTS = [
 /** Prod endpoint for quota checks. */
 const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
 
+// Keep Antigravity version in sync with known working UA versions.
+// Using an outdated version can yield "This version of Antigravity is no longer supported".
+const ANTIGRAVITY_VERSION = "1.15.8";
+
 const ANTIGRAVITY_HEADERS: Record<string, string> = {
-	"User-Agent": "antigravity/1.11.5 darwin/arm64",
+	"User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/${ANTIGRAVITY_VERSION} Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36`,
 	"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-	"Client-Metadata": JSON.stringify({
-		ideType: "IDE_UNSPECIFIED",
-		platform: "PLATFORM_UNSPECIFIED",
-		pluginType: "GEMINI",
-	}),
+	"Client-Metadata": '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}',
 };
 
 const IMAGE_SYSTEM_INSTRUCTION =
@@ -415,6 +415,12 @@ async function parseSseForImage(
 		}
 	} finally {
 		reader.releaseLock();
+	}
+
+	if (textParts.length > 0) {
+		const summary = textParts.join(" ").replace(/\s+/g, " ").trim();
+		const snippet = summary.length > 400 ? `${summary.slice(0, 400)}…` : summary;
+		throw new Error(`No image data returned by the model. Response text: ${snippet}`);
 	}
 
 	throw new Error("No image data returned by the model");
