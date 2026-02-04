@@ -50,7 +50,7 @@ export interface ResolvedConfig {
 }
 
 const DEFAULT_RESOURCES: ResolvedConfig["resources"] = {
-	skills: { enabled: true, searchPaths: [".pi/skills"] },
+	skills: { enabled: true, searchPaths: [".pi/skills", ".agents/skills"] },
 	prompts: { enabled: false, searchPaths: [".pi/prompts"] },
 	themes: { enabled: false, searchPaths: [".pi/themes"] },
 };
@@ -58,7 +58,7 @@ const DEFAULT_RESOURCES: ResolvedConfig["resources"] = {
 const DEFAULT_CONFIG: AncestorDiscoveryConfig = {
 	boundary: "home",
 	resources: {
-		skills: { enabled: true, searchPaths: [".pi/skills"] },
+		skills: { enabled: true, searchPaths: [".pi/skills", ".agents/skills"] },
 		prompts: { enabled: false, searchPaths: [".pi/prompts"] },
 		themes: { enabled: false, searchPaths: [".pi/themes"] },
 	},
