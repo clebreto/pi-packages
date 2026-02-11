@@ -37,8 +37,9 @@
  *   # Use default model
  *   pi --model synthetic
  *
- * Supported Models (as of 2026-01-29):
+ * Supported Models (as of 2026-02-10):
  * - hf:moonshotai/Kimi-K2.5 (reasoning + vision)
+ * - hf:nvidia/Kimi-K2.5-NVFP4 (reasoning + vision, NVIDIA FP4 variant)
  * - hf:MiniMaxAI/MiniMax-M2.1 (reasoning)
  * - hf:zai-org/GLM-4.7 (reasoning)
  *
@@ -187,11 +188,12 @@ async function fetchSyntheticModels(apiKey?: string): Promise<ProviderModelConfi
 /**
  * Fallback models if API fetch fails.
  * Data sourced from: curl https://api.synthetic.new/openai/v1/models
- * Last updated: 2026-01-29
+ * Last updated: 2026-02-10
  *
  * Pricing format: $/million tokens
- * Most models: "$0.00000055" per token = $0.55 per million tokens
- * Kimi-K2.5: "$1.20" per million (already in per-M format)
+ * Synthetic-hosted models:
+ * - Kimi-K2.5 & NVFP4: $0.55 input, $2.19 output, 262K context
+ * - GLM-4.7: $0.55 input, $2.19 output, 202K context
  */
 function getFallbackModels(): ProviderModelConfig[] {
 	return [
@@ -201,9 +203,24 @@ function getFallbackModels(): ProviderModelConfig[] {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
-				input: 1.2,
-				output: 1.2,
-				cacheRead: 1.2,
+				input: 0.55,
+				output: 2.19,
+				cacheRead: 0.55,
+				cacheWrite: 0,
+			},
+			contextWindow: 262144,
+			maxTokens: 65536,
+			compat: SYNTHETIC_COMPAT,
+		},
+		{
+			id: "hf:nvidia/Kimi-K2.5-NVFP4",
+			name: "nvidia/Kimi-K2.5-NVFP4",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0.55,
+				output: 2.19,
+				cacheRead: 0.55,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -216,9 +233,9 @@ function getFallbackModels(): ProviderModelConfig[] {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.55,
-				output: 2.19,
-				cacheRead: 0.55,
+				input: 0.30,
+				output: 1.20,
+				cacheRead: 0.30,
 				cacheWrite: 0,
 			},
 			contextWindow: 196608,
